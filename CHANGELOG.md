@@ -18,7 +18,8 @@ First release. Same bits, any GPU.
 - Standard PyTorch on same test: different weights every time across GPUs
 
 ### Known gaps
-- Overhead ~1.07x on single GPU (mostly from float64 accumulation)
+- Overhead ~1.07x single-GPU same-architecture (PyTorch deterministic mode handles most of it)
+- Cross-GPU determinism uses tiled matmul — overhead depends on model size (measured ~1x on toy model, expect ~2-3x at scale)
 - Cross-GPU overhead not yet measured at scale
 - No fp16/bf16 mixed precision support yet
 - Attention uses manual QKV matmul (no SDPA) for cross-GPU determinism
