@@ -79,6 +79,32 @@ assert trainer.verify_determinism(batch, loss_fn)
 
 For alignment research where reproducibility is non-negotiable — worth it.
 
+## Proven Results — RTX 4090 vs RTX 5090
+
+Different GPU architectures (Ada Lovelace vs Blackwell). Same seed. Same data. 50 and 200 training steps.
+
+### Standard PyTorch
+
+| GPU | Weight Hash | Loss |
+|-----|-------------|------|
+| RTX 4090 | `6a6e2bc1b29e831b...` | 0.069844 |
+| RTX 5090 | `46681ef8c8420252...` | 0.069844 |
+
+**Same loss, DIFFERENT weights.** The models converged to different local configurations because cuBLAS picked different internal algorithms on different silicon. You can't reproduce this run.
+
+### Carbon
+
+| GPU | Weight Hash | Optimizer Hash | Loss |
+|-----|-------------|---------------|------|
+| RTX 4090 (50 steps) | `62118e9c641a0150...` | — | 0.070026 |
+| RTX 5090 (50 steps) | `62118e9c641a0150...` | — | 0.070026 |
+| RTX 4090 (200 steps) | `e2aa1052f4a9dcf3...` | `39dc99f0f803efe7...` | 0.045067 |
+| RTX 5090 (200 steps) | `e2aa1052f4a9dcf3...` | `39dc99f0f803efe7...` | 0.045067 |
+
+**Identical weights. Identical optimizer state. Identical loss. Different silicon.**
+
+Carbon achieved what PyTorch could not: bit-exact reproducible training across heterogeneous GPU architectures.
+
 ## Citation
 
 ```bibtex

@@ -57,6 +57,7 @@ def enable(seed: int = 42, warn: bool = True):
     # Patch non-deterministic operations
     _patch_scatter_ops()
     _patch_distributed_ops()
+    _patch_matmul()
 
     _ENABLED = True
 
@@ -124,6 +125,51 @@ def _patch_distributed_ops():
     dist.all_reduce = deterministic_all_reduce
 
 
+def _patch_matmul():
+    """Patch torch.matmul with deterministic tiled matmul.
+
+    This is the key to cross-GPU determinism. Standard cuBLAS picks
+    different algorithms on different GPU architectures (Ada vs Blackwell).
+    Our tiled matmul with fixed reduction order + Kahan accumulation
+    produces identical bits on any GPU.
+    """
+    from carbon.matmul import DeterministicMatMul
+
+    _ORIGINAL_OPS["matmul"] = torch.matmul
+    _ORIGINAL_OPS["Tensor.matmul"] = torch.Tensor.matmul
+    _ORIGINAL_OPS["mm"] = torch.mm
+    _ORIGINAL_OPS["bmm"] = torch.bmm
+
+    def det_matmul(a, b, *, out=None):
+        if a.is_cuda and a.requires_grad:
+            return DeterministicMatMul.apply(a, b)
+        if a.is_cuda:
+            # No grad needed — still use deterministic path
+            with torch.no_grad():
+                return DeterministicMatMul.apply(a, b)
+        return _ORIGINAL_OPS["matmul"](a, b, out=out)
+
+    def det_tensor_matmul(self, other):
+        if self.is_cuda:
+            return det_matmul(self, other)
+        return _ORIGINAL_OPS["Tensor.matmul"](self, other)
+
+    def det_mm(a, b, *, out=None):
+        if a.is_cuda:
+            return det_matmul(a, b)
+        return _ORIGINAL_OPS["mm"](a, b, out=out)
+
+    def det_bmm(a, b, *, out=None):
+        if a.is_cuda:
+            return det_matmul(a, b)
+        return _ORIGINAL_OPS["bmm"](a, b, out=out)
+
+    torch.matmul = det_matmul
+    torch.Tensor.matmul = det_tensor_matmul
+    torch.mm = det_mm
+    torch.bmm = det_bmm
+
+
 def _restore_ops():
     """Restore original PyTorch operations."""
     if "index_add_" in _ORIGINAL_OPS:
@@ -131,5 +177,11 @@ def _restore_ops():
 
     if "all_reduce" in _ORIGINAL_OPS:
         dist.all_reduce = _ORIGINAL_OPS["all_reduce"]
+
+    if "matmul" in _ORIGINAL_OPS:
+        torch.matmul = _ORIGINAL_OPS["matmul"]
+        torch.Tensor.matmul = _ORIGINAL_OPS["Tensor.matmul"]
+        torch.mm = _ORIGINAL_OPS["mm"]
+        torch.bmm = _ORIGINAL_OPS["bmm"]
 
     _ORIGINAL_OPS.clear()

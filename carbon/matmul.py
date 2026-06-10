@@ -24,6 +24,11 @@ from typing import Optional
 
 from carbon.summation import KahanAccumulator
 
+# Save the ORIGINAL torch.matmul before any patching happens.
+# _tiled_matmul needs this to avoid infinite recursion when
+# carbon.enable() patches torch.matmul globally.
+_original_matmul = torch.matmul
+
 
 class DeterministicMatMul(torch.autograd.Function):
     """
@@ -100,10 +105,9 @@ def _tiled_matmul(a: torch.Tensor, b: torch.Tensor,
         a_tile = a[..., :, k_start:k_end]  # (..., M, tile)
         b_tile = b[..., k_start:k_end, :]  # (..., tile, N)
 
-        # Compute partial product for this tile
-        # Use standard matmul for the tile (small enough to be deterministic
-        # within a single tile on most hardware)
-        partial = torch.matmul(
+        # Use the ORIGINAL unpatched matmul to avoid infinite recursion
+        # when carbon.enable() patches torch.matmul globally
+        partial = _original_matmul(
             a_tile.to(torch.float64),
             b_tile.to(torch.float64)
         )
