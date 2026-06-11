@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0", "torch>=2.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "carbon"
+name = "alia-carbon"
 version = "0.1.0"
 description = "Bit-exact deterministic deep learning training across heterogeneous hardware"
 authors = [{name = "Tushar Sharma", email = "txshar@proton.me"}]
