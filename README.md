@@ -106,10 +106,10 @@ Carbon achieved what PyTorch could not: bit-exact reproducible training across h
 ## Citation
 
 ```bibtex
-@article{sharma2025carbon,
+@article{sharma2026carbon,
   title={Carbon: Bit-Exact Deterministic Training Across Heterogeneous Hardware},
   author={Sharma, Tushar},
-  year={2025},
+  year={2026},
   url={https://github.com/TxsharDev/carbon}
 }
 ```
