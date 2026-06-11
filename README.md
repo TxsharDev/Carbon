@@ -14,7 +14,7 @@ Carbon makes training bit-exact reproducible across different GPU architectures.
 
 Train on an RTX 4090. Train on an RTX 5090. Same SHA-256 hash on every weight tensor. Same optimizer state. Same loss. Different silicon, identical bits.
 
-Built by [Tushar Sharma](https://github.com/TxsharDev) at Alia Labs.
+Built by [Tushar Sharma](https://github.com/TxsharDev) at ALIA Labs.
 
 ## Install
 
@@ -125,4 +125,4 @@ Consumer GPUs match each other. Datacenter GPUs match each other. Cross-tier (co
 
 ## License
 
-Apache-2.0 | Alia Labs
+Apache-2.0 | ALIA Labs
