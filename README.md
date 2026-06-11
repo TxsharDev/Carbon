@@ -115,6 +115,14 @@ Consumer GPUs match each other. Datacenter GPUs match each other. Cross-tier (co
 }
 ```
 
+## Roadmap
+
+**v0.1 (current)** - Proof of concept. KBN summation, tiled fp64 matmul, Python-level tiling.
+
+**v0.2** - Performance. Replace Kahan accumulation with [superaccumulators](https://github.com/radfordneal/xsum) for order-independent exact summation. This eliminates the need for fixed tile order and could close the consumer-vs-datacenter hash gap. CUDA-native tiled matmul to cut the 10x overhead to under 2x.
+
+**v0.3** - Scale. Mixed precision (bf16 forward, fp32 master weights). Multi-GPU deterministic allreduce. FSDP/DDP integration. Target: deterministic fine-tuning of 7B+ models.
+
 ## License
 
 Apache-2.0 | Alia Labs
