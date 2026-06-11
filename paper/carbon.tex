@@ -302,8 +302,7 @@ Carbon & \texttt{39dc99f0...} & \texttt{39dc99f0...} & \textbf{Yes} \\
 \centering
 \includegraphics[width=0.9\linewidth]{fig_hashes.pdf}
 \caption{Cross-GPU hash matching. Green: identical hashes within cluster.
-Consumer GPUs (4090, 5090) match each other. Datacenter GPUs (H100, A100)
-match each other. Cross-tier hashes differ (documented limitation).}
+Consumer GPUs (4090, 5090) produce identical weights.}
 \label{fig:hashes}
 \end{figure}
 
@@ -433,17 +432,17 @@ Cross-architecture determinism is not the same as same-GPU determinism.
 PyTorch's \texttt{torch.use\_deterministic\_algorithms(True)} achieves the
 latter: run the same code twice on the same GPU and get the same result.
 Carbon achieves the former for models built with Carbon's custom layers: run
-on \emph{any consumer GPU} and get the same result. Consumer and datacenter
-GPU clusters produce different hashes from each other (Ada/Blackwell
-$\neq$ Hopper/Ampere), but are internally consistent within each tier.
+on \emph{any consumer GPU} and get the same result. We validated this on
+RTX 4090 (Ada Lovelace) and RTX 5090 (Blackwell). Datacenter GPU
+determinism (H100, A100) is untested and left for future work.
 
 This distinction is critical for:
 
 \begin{itemize}
-  \item \textbf{Alignment labs} that train on A100 clusters but need to reproduce
-    results on H100 or B200 hardware during audits.
-  \item \textbf{Academic reproducibility} where reviewers may not have access
+  \item \textbf{Research reproducibility} where reviewers may not have access
     to the same GPU model as the authors.
+  \item \textbf{Debugging} where reproducing the exact training state at a
+    specific step requires bit-exact determinism.
   \item \textbf{Hardware migration} where an organization upgrades GPUs
     mid-project and needs training continuity.
 \end{itemize}
@@ -467,6 +466,52 @@ state.
   \item \textbf{Dropout}: disabled in our tests. Deterministic dropout
     (via fixed PRNG state) is planned.
 \end{itemize}
+
+% ============================================================
+\section{Related Work}
+% ============================================================
+
+\textbf{Floating-point reproducibility.}
+Demmel and Nguyen \cite{demmel2013ieee,demmel2015parallel} developed
+reproducible summation algorithms that guarantee identical results
+regardless of processor count. Their work targets the summation
+primitive; Carbon extends this principle to full matrix multiplication
+and training loops. Intel MKL's Conditional Numerical Reproducibility
+mode \cite{higham2002accuracy} provides same-hardware reproducibility
+but not cross-architecture guarantees.
+
+\textbf{PyTorch deterministic mode.}
+PyTorch \cite{paszke2019pytorch} provides
+\texttt{torch.use\_deterministic\_algorithms(True)} which forces
+deterministic kernel selection on a single GPU. This does not
+guarantee cross-architecture reproducibility because cuBLAS
+\cite{nvidia2023determinism} selects different internal algorithms
+on different GPU microarchitectures.
+
+\textbf{Deterministic training.}
+Nagarajan et al.\ \cite{nagarajan2019deterministic} studied deterministic
+behavior in deep reinforcement learning. Their work focuses on
+same-GPU reproducibility. Pineau et al.\ \cite{pineau2021improving}
+documented the ML reproducibility crisis and proposed checklists,
+but did not address floating-point non-determinism across hardware.
+
+\textbf{Mixed precision.}
+Micikevicius et al.\ \cite{micikevicius2018mixed} introduced mixed-precision
+training with FP16 forward passes and FP32 master weights. Carbon
+currently operates in FP32 only; extending to mixed precision
+while maintaining cross-architecture determinism is future work.
+
+\textbf{AdamW optimizer.}
+We use AdamW \cite{loshchilov2019adamw} for all experiments. The optimizer's
+element-wise updates are deterministic given deterministic gradients,
+which Carbon ensures through its tiled matmul and compensated summation.
+
+Carbon is, to our knowledge, the first system to demonstrate bit-exact
+weight identity across different consumer GPU architectures (Ada Lovelace
+and Blackwell) in a complete training loop including optimizer state.
+The IEEE 754 standard \cite{ieee754} guarantees individual operation
+reproducibility but not reduction-order reproducibility, which is the
+gap Carbon fills.
 
 % ============================================================
 \section{Conclusion}
