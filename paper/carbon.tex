@@ -9,6 +9,7 @@
 \usepackage{listings}
 \usepackage{xcolor}
 \usepackage[margin=1in]{geometry}
+\graphicspath{{figures/}}
 
 \lstset{
   basicstyle=\ttfamily\small,
@@ -143,6 +144,14 @@ order depends on network latency and device synchronization timing. This produce
 different gradient accumulations across runs even on identical hardware.
 
 % ============================================================
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.9\linewidth]{fig_mechanism.pdf}
+\caption{Standard cuBLAS uses architecture-dependent reduction order.
+Carbon uses fixed tile order with Kahan accumulation to produce identical bits.}
+\label{fig:mechanism}
+\end{figure}
+
 \section{Carbon's Approach}
 % ============================================================
 
@@ -279,6 +288,15 @@ Carbon & \texttt{39dc99f0...} & \texttt{39dc99f0...} & \textbf{Yes} \\
 \end{tabular}
 \end{table}
 
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.9\linewidth]{fig_hashes.pdf}
+\caption{Cross-GPU hash matching. Green: identical hashes within cluster.
+Consumer GPUs (4090, 5090) match each other. Datacenter GPUs (H100, A100)
+match each other. Cross-tier hashes differ (documented limitation).}
+\label{fig:hashes}
+\end{figure}
+
 Standard PyTorch produces \textbf{different} weight hashes on the two GPUs
 despite identical seeds and data. The loss values are identical to 6 decimal
 places (0.069844), indicating convergence to similar but not identical points.
@@ -344,6 +362,23 @@ across the RTX 4090 and RTX 5090 on a real GPT-2-scale model with
 60 million trainable parameters. Standard PyTorch produces a different
 hash (\texttt{85b72d9f}) demonstrating that the non-determinism exists
 at this scale.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.9\linewidth]{fig_loss.pdf}
+\caption{Training loss curves for GPT-2 124M fine-tune. All four Carbon
+runs (two on 5090, one on 4090, one repeat) overlap exactly. Standard
+PyTorch is close but not identical.}
+\label{fig:loss}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.7\linewidth]{fig_overhead.pdf}
+\caption{Carbon overhead: 1.07$\times$ on toy model, 10.1$\times$ on
+GPT-2 scale. The overhead is the cost of float64 Kahan-compensated matmul.}
+\label{fig:overhead}
+\end{figure}
 
 \textbf{Note:} This test uses Carbon's custom layers (DeterministicLinear,
 CarbonLayerNorm) for all trainable parameters. The frozen GPT-2 embeddings
