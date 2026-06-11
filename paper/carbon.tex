@@ -412,8 +412,8 @@ Model & Method & Time (s) & Overhead \\
 500K toy (50 steps) & Standard & 3.66 & 1.00$\times$ \\
 500K toy (50 steps) & Carbon & 3.92 & 1.07$\times$ \\
 \midrule
-GPT-2 124M (20 steps, 60M trainable) & Standard & 1.4 & 1.00$\times$ \\
-GPT-2 124M (20 steps, 60M trainable) & Carbon & 13.8 & \textbf{10.1$\times$} \\
+GPT-2 124M (20 steps, 60M trainable) & Standard & 1.37 & 1.00$\times$ \\
+GPT-2 124M (20 steps, 60M trainable) & Carbon & 13.81 & \textbf{10.1$\times$} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -481,7 +481,7 @@ Demmel and Nguyen \cite{demmel2013ieee,demmel2015parallel} developed
 reproducible summation algorithms that guarantee identical results
 regardless of processor count. Their work targets the summation
 primitive; Carbon extends this principle to full matrix multiplication
-and training loops. Intel MKL's Conditional Numerical Reproducibility
+and training loops. Prior work on numerical stability's Conditional Numerical Reproducibility
 mode \cite{higham2002accuracy} provides same-hardware reproducibility
 but not cross-architecture guarantees.
 
