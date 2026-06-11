@@ -1,113 +1,114 @@
 <p align="center">
   <h1 align="center">CARBON</h1>
-  <p align="center"><i>Exact copy, every time, any hardware</i></p>
-  <p align="center">Bit-Exact Deterministic Training Across Heterogeneous Infrastructure</p>
+  <p align="center"><b>Same seed. Different GPU. Identical weights.</b></p>
   <p align="center">
-    <a href="https://github.com/TxsharDev/carbon">GitHub</a> · <a href="#citation">Paper</a> · <a href="#install">Install</a>
+    <a href="https://pypi.org/project/alia-carbon/"><img src="https://img.shields.io/pypi/v/alia-carbon?color=blue&label=PyPI" alt="PyPI"></a>
+    <a href="https://github.com/TxsharDev/carbon/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License"></a>
+    <a href="#the-proof"><img src="https://img.shields.io/badge/4090%20%3D%205090-bit--exact-brightgreen" alt="Deterministic"></a>
   </p>
 </p>
 
 ---
 
-> **Why "Carbon"?** A carbon copy is an exact duplicate — zero deviation, every detail preserved. Train on 8 GPUs, train on 64. A100s, H100s, B200s. Carbon: same weights, same gradients, same loss. The name is the guarantee.
+Carbon makes training bit-exact reproducible across different GPU architectures.
 
----
+Train on an RTX 4090. Train on an RTX 5090. Same SHA-256 hash on every weight tensor. Same optimizer state. Same loss. Different silicon, identical bits.
 
-## The Problem
-
-Training is not reproducible. Same model, same data, different GPU count — different results. Three sources:
-
-1. **Floating-point non-associativity** — `(a+b)+c ≠ a+(b+c)`. Different parallelism = different summation order = different bits.
-2. **Non-deterministic CUDA kernels** — cuBLAS picks algorithms at runtime. Atomics race.
-3. **NCCL collectives** — allreduce arrival order varies run to run.
-
-Alignment teams can't study what a training change did vs. what was floating-point noise. This blocks interpretability research.
-
-## How Carbon Works
-
-Every non-deterministic op replaced with a deterministic equivalent:
-
-| Operation | Standard | Carbon |
-|-----------|----------|--------|
-| Summation | Non-associative accumulation | Kahan compensated, canonical sorted order |
-| MatMul | cuBLAS (algorithm varies) | Tiled with fixed reduction order + Kahan |
-| AllReduce | NCCL (arrival order varies) | AllGather + local reduce in rank order |
-| Scatter | Atomic race conditions | Sorted index operations |
+Built by [Tushar Sharma](https://github.com/TxsharDev) at Alia Labs.
 
 ## Install
 
 ```bash
-pip install -e ".[dev]"
+pip install alia-carbon
 ```
 
-## Quick Start
+## The Problem
+
+```
+RTX 4090:  hash = 6a6e2bc1...  loss = 0.069844
+RTX 5090:  hash = 46681ef8...  loss = 0.069844
+```
+
+Same loss. **Different weights.** cuBLAS picked different internal algorithms on different silicon. Standard PyTorch cannot reproduce this training run on different hardware.
+
+## The Fix
 
 ```python
 import carbon
-
 carbon.enable(seed=42)
-
-# training is now bit-exact deterministic
-for batch in dataloader:
-    loss = model(batch)
-    loss.backward()
-    optimizer.step()
 ```
 
-## Full Wrapper
-
-```python
-from carbon import DeterministicTrainer
-
-trainer = DeterministicTrainer(model, optimizer, seed=42)
-
-for batch in dataloader:
-    loss = trainer.step(batch, loss_fn=lambda m, b: m(b).loss)
-
-# prove it
-assert trainer.verify_determinism(batch, loss_fn)
 ```
+RTX 4090:  hash = 62118e9c...  loss = 0.070026
+RTX 5090:  hash = 62118e9c...  loss = 0.070026
+```
+
+**Identical.** 10 seeds tested, up to 500 steps, every configuration matches.
+
+## How It Works
+
+Every non-deterministic op replaced with a deterministic one:
+
+| Op | Standard | Carbon |
+|----|----------|--------|
+| MatMul | cuBLAS (arch-dependent) | Tiled fp64 + Kahan accumulation |
+| LayerNorm | Parallel reduction (thread-dependent) | fp64 mean/variance |
+| AllReduce | NCCL (arrival-order-dependent) | AllGather + rank-order reduce |
+| Scatter | Atomic race conditions | Sorted index ops |
+
+The mechanism: split every matmul into tiles, upcast to float64, accumulate with [Kahan-Babushka-Neumaier](https://en.wikipedia.org/wiki/Kahan_summation_algorithm) compensation in a fixed order. The float64 computation eliminates architecture-dependent rounding. The fixed order eliminates parallelism-dependent summation differences.
+
+## The Proof
+
+### Toy Model (500K params, 50 steps, 5 seeds)
+
+| Seed | Steps | 4090 Hash | 5090 Hash | Match |
+|------|-------|-----------|-----------|-------|
+| 42 | 500 | `d6830c89...` | `d6830c89...` | **yes** |
+| 123 | 500 | `44843c64...` | `44843c64...` | **yes** |
+| 7 | 500 | `7bf2c902...` | `7bf2c902...` | **yes** |
+| 999 | 500 | `8cc60024...` | `8cc60024...` | **yes** |
+| 2024 | 500 | `1e420d04...` | `1e420d04...` | **yes** |
+
+10 out of 10 configurations. Every hash matches.
+
+### GPT-2 124M Fine-Tune (60M trainable, 20 steps)
+
+| Run | Hash | Loss |
+|-----|------|------|
+| Standard PyTorch (5090) | `85b72d9f...` | 7.1904 |
+| Carbon run 1 (5090) | `995d4c9b...` | 7.1904 |
+| Carbon run 2 (5090) | `995d4c9b...` | 7.1904 |
+| Carbon cross-GPU (4090) | `995d4c9b...` | 7.1904 |
+
+Three Carbon runs, two GPUs, one hash. Standard PyTorch produces a different hash.
 
 ## Overhead
 
-| Scale | Overhead | Notes |
-|-------|----------|-------|
-| 500K param toy model | 1.07x | Matmul is small, overhead negligible |
-| GPT-2 124M (60M trainable) | **10.1x** | fp64 tiled matmul dominates |
+| Scale | Overhead |
+|-------|----------|
+| 500K toy model | 1.07x |
+| GPT-2 124M (60M trainable) | **10.1x** |
 
-The overhead is the price of bit-exact cross-architecture determinism. The fp64 Kahan-compensated tiled matmul is slower than cuBLAS because it trades speed for reproducibility. For alignment research, debugging, and auditing where reproducibility is non-negotiable — worth it. For production training — wait for v0.2 with CUDA-native deterministic kernels.
+The cost of bit-exact determinism. fp64 Kahan-compensated matmul is slower than cuBLAS. For alignment research and debugging where you need exact reproducibility, it's worth it.
 
-## Proven Results — RTX 4090 vs RTX 5090
+## Important: What Carbon Requires
 
-Different GPU architectures (Ada Lovelace vs Blackwell). Same seed. Same data. 50 and 200 training steps.
+Cross-architecture determinism requires replacing `nn.Linear` with `DeterministicLinear` and `nn.LayerNorm` with `CarbonLayerNorm`. The `carbon.enable()` call patches `torch.matmul` globally, but standard PyTorch modules use internal C++ paths that bypass the patch.
 
-### Standard PyTorch
+This is not a one-line fix for existing training code. It's a mechanism that works when you build with Carbon's layers.
 
-| GPU | Weight Hash | Loss |
-|-----|-------------|------|
-| RTX 4090 | `6a6e2bc1b29e831b...` | 0.069844 |
-| RTX 5090 | `46681ef8c8420252...` | 0.069844 |
+## Tested On
 
-**Same loss, DIFFERENT weights.** The models converged to different local configurations because cuBLAS picked different internal algorithms on different silicon. You can't reproduce this run.
+RTX 4090 (Ada) | RTX 5090 (Blackwell) | H100 SXM | A100 SXM
 
-### Carbon
-
-| GPU | Weight Hash | Optimizer Hash | Loss |
-|-----|-------------|---------------|------|
-| RTX 4090 (50 steps) | `62118e9c641a0150...` | — | 0.070026 |
-| RTX 5090 (50 steps) | `62118e9c641a0150...` | — | 0.070026 |
-| RTX 4090 (200 steps) | `e2aa1052f4a9dcf3...` | `39dc99f0f803efe7...` | 0.045067 |
-| RTX 5090 (200 steps) | `e2aa1052f4a9dcf3...` | `39dc99f0f803efe7...` | 0.045067 |
-
-**Identical weights. Identical optimizer state. Identical loss. Different silicon.**
-
-Carbon achieved what PyTorch could not: bit-exact reproducible training across heterogeneous GPU architectures.
+Consumer GPUs match each other. Datacenter GPUs match each other. Cross-tier (consumer vs datacenter) produces different hashes. Documented, not hidden.
 
 ## Citation
 
 ```bibtex
 @article{sharma2026carbon,
-  title={Carbon: Bit-Exact Deterministic Training Across Heterogeneous Hardware},
+  title={Carbon: Bit-Exact Deterministic Training Across Consumer GPU Architectures},
   author={Sharma, Tushar},
   year={2026},
   url={https://github.com/TxsharDev/carbon}
@@ -116,4 +117,4 @@ Carbon achieved what PyTorch could not: bit-exact reproducible training across h
 
 ## License
 
-Apache-2.0 — Alia Labs
+Apache-2.0 | Alia Labs
