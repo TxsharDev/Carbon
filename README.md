@@ -70,14 +70,12 @@ assert trainer.verify_determinism(batch, loss_fn)
 
 ## Overhead
 
-| Component | Cost |
-|-----------|------|
-| Kahan summation | ~1.5x |
-| Deterministic matmul | ~2-3x |
-| Deterministic allreduce | ~2x |
-| End-to-end | ~2-3x |
+| Scale | Overhead | Notes |
+|-------|----------|-------|
+| 500K param toy model | 1.07x | Matmul is small, overhead negligible |
+| GPT-2 124M (60M trainable) | **10.1x** | fp64 tiled matmul dominates |
 
-For alignment research where reproducibility is non-negotiable — worth it.
+The overhead is the price of bit-exact cross-architecture determinism. The fp64 Kahan-compensated tiled matmul is slower than cuBLAS because it trades speed for reproducibility. For alignment research, debugging, and auditing where reproducibility is non-negotiable — worth it. For production training — wait for v0.2 with CUDA-native deterministic kernels.
 
 ## Proven Results — RTX 4090 vs RTX 5090
 
