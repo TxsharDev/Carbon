@@ -38,7 +38,7 @@
 
 \begin{abstract}
 Deep learning training is not reproducible. Train the same model on an RTX 4090
-and an RTX 5090---same seed, same data, same optimizer---and you get different
+and an RTX 5090. Same seed, same data, same optimizer. You get different
 weights. The loss might converge to the same value, but the weight tensors differ
 at the bit level. This non-determinism originates from three sources: cuBLAS
 algorithm selection (which varies by GPU architecture), floating-point
@@ -50,7 +50,7 @@ multiplication with Kahan-compensated accumulation in a fixed canonical order,
 float64-accumulated LayerNorm, and deterministic index operations.
 On a 4-layer transformer trained for 200 steps, Carbon produces
 \textbf{identical SHA-256 weight hashes} and \textbf{identical optimizer state hashes}
-on an NVIDIA RTX 4090 (Ada Lovelace, sm\_89) and RTX 5090 (Blackwell, sm\_120)---two
+on an NVIDIA RTX 4090 (Ada Lovelace, sm\_89) and RTX 5090 (Blackwell, sm\_120), two
 architectures with different cuBLAS implementations, different warp schedulers,
 and different floating-point microarchitectures. Standard PyTorch on the same
 test produces different weight hashes every time.
@@ -139,7 +139,7 @@ different warp schedulers, producing different reduction trees.
 \subsection{NCCL Collective Non-Determinism}
 
 In multi-GPU training, \texttt{allreduce} operations aggregate gradients across
-devices. NCCL's ring-allreduce does not guarantee a fixed reduction order---the
+devices. NCCL's ring-allreduce does not guarantee a fixed reduction order. The
 order depends on network latency and device synchronization timing. This produces
 different gradient accumulations across runs even on identical hardware.
 
@@ -189,7 +189,7 @@ compensated summation \cite{kahan1965,neumaier1974}:
     $T = 128$, the worst-case divergence between two reduction orders is
     $\sim T \cdot \epsilon_{64} \approx 128 \times 2.2 \times 10^{-16} \approx
     2.8 \times 10^{-14}$, which vanishes when the final result is cast back to
-    float32 ($\epsilon_{32} \approx 1.2 \times 10^{-7}$)---a margin of
+    float32 ($\epsilon_{32} \approx 1.2 \times 10^{-7}$), a margin of
     $\sim$4000$\times$.
   \item Accumulate $\sum_t P_t$ in float64 using a Kahan accumulator, which
     tracks and compensates rounding errors:
@@ -421,8 +421,8 @@ tiling loop) would substantially reduce overhead.
 
 Cross-architecture determinism is not the same as same-GPU determinism.
 PyTorch's \texttt{torch.use\_deterministic\_algorithms(True)} achieves the
-latter---run the same code twice on the same GPU and get the same result.
-Carbon achieves the former for models built with Carbon's custom layers---run
+latter: run the same code twice on the same GPU and get the same result.
+Carbon achieves the former for models built with Carbon's custom layers: run
 on \emph{any consumer GPU} and get the same result. Consumer and datacenter
 GPU clusters produce different hashes from each other (Ada/Blackwell
 $\neq$ Hopper/Ampere), but are internally consistent within each tier.
@@ -464,8 +464,8 @@ state.
 
 Same seed. Same data. Different GPU. Identical weights. That's Carbon.
 
-RTX 4090 and RTX 5090---two architectures, two cuBLAS implementations,
-two warp schedulers---produce the same SHA-256 hash on every weight tensor
+RTX 4090 and RTX 5090, two architectures, two cuBLAS implementations,
+two warp schedulers, produce the same SHA-256 hash on every weight tensor
 and every optimizer state tensor. 5 seeds, up to 500 steps, 10 out of 10
 configurations match.
 
@@ -473,7 +473,7 @@ The approach is straightforward: fixed-order tiled matmul in float64,
 Kahan-compensated accumulation, float64 normalization. Every non-deterministic
 operation replaced with one that doesn't depend on which silicon it runs on.
 
-Significant work remains---mixed precision, multi-GPU, and scale testing
+Significant work remains: mixed precision, multi-GPU, and scale testing
 on production models. But the core mechanism is proven: cross-architecture
 determinism is achievable without hardware-specific code.
 
