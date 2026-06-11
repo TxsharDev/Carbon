@@ -58,12 +58,13 @@ weights across heterogeneous GPU architectures by replacing every
 non-deterministic operation with a deterministic equivalent: tiled matrix
 multiplication with Kahan-compensated accumulation in a fixed canonical order,
 float64-accumulated LayerNorm, and deterministic index operations.
-On a 4-layer transformer trained for 200 steps, Carbon produces
-\textbf{identical SHA-256 weight hashes} and \textbf{identical optimizer state hashes}
+On a 4-layer transformer trained for 50 steps across 5 seeds, Carbon produces
+\textbf{identical SHA-256 weight hashes}
 on an NVIDIA RTX 4090 (Ada Lovelace, sm\_89) and RTX 5090 (Blackwell, sm\_120), two
-architectures with different cuBLAS implementations, different warp schedulers,
-and different floating-point microarchitectures. Standard PyTorch on the same
-test produces different weight hashes every time.
+consumer GPU architectures with different cuBLAS implementations and different
+floating-point pipelines. On a GPT-2 124M fine-tune (60M trainable parameters,
+20 steps), Carbon achieves the same cross-GPU bit-exact match at 10.1$\times$
+overhead. Standard PyTorch on the same tests produces different weight hashes.
 \end{abstract}
 
 % ============================================================
@@ -280,14 +281,18 @@ Method & Steps & RTX 4090 Hash & RTX 5090 Hash & Match \\
 \midrule
 PyTorch & 50 & \texttt{6a6e2bc1...} & \texttt{46681ef8...} & \textbf{No} \\
 Carbon & 50 & \texttt{62118e9c...} & \texttt{62118e9c...} & \textbf{Yes} \\
-Carbon & 200 & \texttt{e2aa1052...} & \texttt{e2aa1052...} & \textbf{Yes} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
+Standard PyTorch produces different weight hashes on the two GPUs
+despite identical seeds and data. Carbon produces identical hashes.
+The benchmark script (\texttt{prove\_cross\_gpu.py}) is included in the
+repository for full reproducibility.
+
 \begin{table}[h]
 \centering
-\caption{Optimizer state (AdamW moments) hash comparison at 200 steps.}
+\caption{GPT-2 fine-tune cross-GPU determinism (20 steps, verified).}
 \label{tab:optim}
 \begin{tabular}{llcc}
 \toprule
