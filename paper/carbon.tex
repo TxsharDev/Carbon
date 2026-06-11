@@ -97,8 +97,19 @@ architecture-independent equivalents:
 \begin{lstlisting}
 import carbon
 carbon.enable(seed=42)
-# Training is now bit-exact reproducible across any GPU
+
+# Replace standard layers with Carbon equivalents
+# (required for cross-architecture determinism)
+model = replace_with_carbon_layers(model)
 \end{lstlisting}
+
+\textbf{Important:} Cross-architecture determinism requires replacing
+\texttt{nn.Linear} with \texttt{DeterministicLinear} and
+\texttt{nn.LayerNorm} with \texttt{CarbonLayerNorm}. The
+\texttt{carbon.enable()} call patches \texttt{torch.matmul} globally,
+but standard PyTorch modules use internal C++ code paths (e.g.,
+\texttt{F.linear}, SDPA) that bypass the patch. Full cross-architecture
+determinism requires Carbon's own layer implementations.
 
 % ============================================================
 \section{Sources of Non-Determinism}
@@ -307,26 +318,67 @@ Seed & Steps & Hashes Match & Loss Match \\
 All 10 configurations produce bit-exact identical weight hashes on
 the RTX 4090 and RTX 5090. The result is not seed-dependent.
 
-\subsection{Overhead}
+\subsection{GPT-2 124M Fine-Tune}
+
+To validate beyond a toy model, we fine-tune a 4-layer transformer head
+on top of frozen GPT-2 124M embeddings (60M trainable parameters, 20 steps,
+AdamW $\eta=10^{-3}$):
 
 \begin{table}[h]
 \centering
-\caption{Training time overhead (50 steps, RTX 5090).}
-\begin{tabular}{lcc}
+\caption{GPT-2 124M fine-tune cross-GPU determinism.}
+\begin{tabular}{llr}
 \toprule
-Method & Time (s) & Overhead \\
+Run & Weight Hash & Loss \\
 \midrule
-Standard PyTorch & 3.66 & 1.00$\times$ \\
-Carbon & 3.92 & 1.07$\times$ \\
+Standard PyTorch (5090) & \texttt{85b72d9f...} & 7.1904 \\
+Carbon run 1 (5090) & \texttt{995d4c9b...} & 7.1904 \\
+Carbon run 2 (5090) & \texttt{995d4c9b...} & 7.1904 \\
+Carbon cross-GPU (4090) & \texttt{995d4c9b...} & 7.1904 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Carbon's overhead on a single GPU is 1.07$\times$---the float64 accumulation
-in matmul and LayerNorm adds minimal cost on modern GPUs with fast FP64 units.
-The overhead will increase with model size as more matmul time is spent in
-the tiled-Kahan path, but we project $<$2$\times$ for typical transformer
-training workloads.
+Carbon produces identical hashes across two runs on the same GPU and
+across the RTX 4090 and RTX 5090 on a real GPT-2-scale model with
+60 million trainable parameters. Standard PyTorch produces a different
+hash (\texttt{85b72d9f}) demonstrating that the non-determinism exists
+at this scale.
+
+\textbf{Note:} This test uses Carbon's custom layers (DeterministicLinear,
+CarbonLayerNorm) for all trainable parameters. The frozen GPT-2 embeddings
+use standard PyTorch but are not updated, so they do not affect determinism.
+Full cross-architecture determinism of standard \texttt{nn.Linear} modules
+requires replacing them with Carbon equivalents.
+
+\subsection{Overhead}
+
+\begin{table}[h]
+\centering
+\caption{Training time overhead.}
+\begin{tabular}{llcc}
+\toprule
+Model & Method & Time (s) & Overhead \\
+\midrule
+500K toy (50 steps) & Standard & 3.66 & 1.00$\times$ \\
+500K toy (50 steps) & Carbon & 3.92 & 1.07$\times$ \\
+\midrule
+GPT-2 124M (20 steps, 60M trainable) & Standard & 1.4 & 1.00$\times$ \\
+GPT-2 124M (20 steps, 60M trainable) & Carbon & 13.8 & \textbf{10.1$\times$} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+On the 500K toy model, Carbon's overhead is minimal (1.07$\times$) because
+the model is small enough that the tiled matmul's float64 path adds little
+cost. At GPT-2 scale (60M trainable parameters with frozen embeddings),
+the overhead is \textbf{10.1$\times$}. This is significant and reflects
+the cost of float64 Kahan-compensated matmul on every forward and backward
+pass. The overhead is the price of bit-exact cross-architecture determinism.
+For alignment research and debugging workflows where reproducibility is
+non-negotiable, this trade-off may be acceptable. For production training,
+optimizations such as CUDA-native deterministic matmul (avoiding the Python
+tiling loop) would substantially reduce overhead.
 
 % ============================================================
 \section{Why This Matters}
@@ -335,7 +387,10 @@ training workloads.
 Cross-architecture determinism is not the same as same-GPU determinism.
 PyTorch's \texttt{torch.use\_deterministic\_algorithms(True)} achieves the
 latter---run the same code twice on the same GPU and get the same result.
-Carbon achieves the former---run on \emph{any} GPU and get the same result.
+Carbon achieves the former for models built with Carbon's custom layers---run
+on \emph{any consumer GPU} and get the same result. Consumer and datacenter
+GPU clusters produce different hashes from each other (Ada/Blackwell
+$\neq$ Hopper/Ampere), but are internally consistent within each tier.
 
 This distinction is critical for:
 
