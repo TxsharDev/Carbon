@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.2.0 — 2026-06-30
+
+WebGPU backend. Determinism beyond CUDA.
+
+### Added
+- **WebGPU backend** (`carbon.wgpu_backend`) — same bit-exact algorithms, no CUDA required
+  - `WgpuDeterministicEngine` class with `matmul()`, `sum()`, `reduce()` methods
+  - WGSL compute shaders: Kahan-compensated tiled matmul, fixed-order reduction, compensated summation
+  - Works on any GPU with WebGPU support (NVIDIA, AMD, Intel, Apple Silicon)
+  - Single thread per output element — slow but bit-exact, same tradeoff as the CUDA path
+- **`get_wgpu_engine()`** convenience function in top-level `carbon` module
+- **Optional dependency**: `pip install alia-carbon[wgpu]` for WebGPU support
+- **22 new tests** for the WebGPU backend (auto-skipped if wgpu not installed)
+
+### Changed
+- Version bump to 0.2.0
+- `pyproject.toml` now has `[wgpu]` and `[all]` optional dependency groups
+
+### Unchanged
+- All v0.1 PyTorch/CUDA APIs remain identical — `carbon.enable()`, `DeterministicMatMul`, `DeterministicTrainer`, etc.
+
+---
+
 ## v0.1.0 — 2026-06-10
 
 First release. Same bits, any GPU.

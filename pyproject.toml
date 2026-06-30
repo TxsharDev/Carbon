@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=68.0", "torch>=2.0"]
+requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "alia-carbon"
-version = "0.1.0"
+version = "0.2.0"
 description = "Bit-exact deterministic deep learning training across heterogeneous hardware"
 authors = [{name = "Tushar Sharma", email = "txshar@proton.me"}]
 license = {text = "Apache-2.0"}
@@ -16,7 +16,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+wgpu = ["wgpu>=0.15"]
 dev = ["pytest>=7.0", "pytest-benchmark"]
+all = ["wgpu>=0.15"]
 
 [project.urls]
 Homepage = "https://github.com/TxsharDev/carbon"

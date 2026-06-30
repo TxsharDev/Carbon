@@ -457,6 +457,68 @@ across different GPU architectures in a complete training loop with optimizer
 state.
 
 % ============================================================
+\section{v0.2: WebGPU Backend}
+
+Carbon v0.2 extends deterministic compute beyond CUDA with a WebGPU backend.
+The same bit-exact algorithms---Kahan-compensated summation and fixed-order
+accumulation---now run on any GPU with WebGPU support (NVIDIA, AMD, Intel,
+Apple Silicon), with no PyTorch or CUDA dependency.
+
+\subsection{Architecture}
+
+The WebGPU backend (\texttt{carbon.wgpu\_backend}) uses three approaches:
+
+\begin{itemize}
+  \item \textbf{GPU matmul}: WGSL compute shader with Dekker exact product
+    and double-single (DS) accumulation. Each output element $C[m,n]$ is
+    computed by one thread iterating over $K$ in fixed sequential order.
+    The Dekker split decomposes each $a \cdot b$ into an exact $(p, \text{err})$
+    pair, which is accumulated via the DS two-sum. An overflow guard falls back
+    to standard multiplication for values exceeding $8 \times 10^{34}$ to
+    prevent NaN from the split operation.
+  \item \textbf{CPU sum}: Kahan-Babushka-Neumaier summation in float64 on the
+    CPU. GPU shader compilers may perform FMA contraction that breaks
+    error-free transformations in f32; CPU float64 avoids this entirely.
+    Summation is $O(N)$ and does not benefit from GPU parallelism.
+  \item \textbf{CPU reduce}: Fixed rank-order Kahan accumulation in float64.
+    Equivalent to \texttt{DeterministicAllReduce} but without NCCL.
+\end{itemize}
+
+\subsection{Design Decision: CPU vs GPU}
+
+WGSL does not guarantee strict IEEE 754 compliance. GPU shader compilers are
+permitted to fuse multiply-add operations and perform algebraic simplifications
+that break Kahan compensation at extreme magnitudes. We confirmed this
+empirically: a Kahan sum of $[10^8, 1, -10^8]$ returns 0.0 on NVIDIA's Vulkan
+WGSL compiler instead of the correct 1.0.
+
+For matmul, the Dekker product + DS accumulation approach is effective because
+the error term arises from multiplication (which the compiler preserves) rather
+than from addition-subtraction of similar magnitudes. For sum and reduce, CPU
+float64 provides exact compensation without shader compiler interference.
+
+\subsection{Validation}
+
+The WebGPU backend is validated with 22 tests:
+\begin{itemize}
+  \item Matmul correctness vs float64 reference (max error $< 10^{-5}$)
+  \item Bit-exact reproducibility across repeated calls
+  \item Kahan sum handles catastrophic cancellation ($10^8 + 1 - 10^8 = 1.0$)
+  \item Dekker overflow guard prevents NaN for values near $10^{35}$
+  \item Multi-dimensional sum across different axes
+  \item Fixed-order reduce matches float64 reference
+\end{itemize}
+
+Usage:
+\begin{lstlisting}
+from carbon.wgpu_backend import WgpuDeterministicEngine
+
+engine = WgpuDeterministicEngine()
+C = engine.matmul(A, B)    # GPU: Dekker + DS
+s = engine.sum(data)       # CPU: f64 Kahan
+r = engine.reduce(partials) # CPU: f64 rank-order
+\end{lstlisting}
+
 \section{Limitations and Future Work}
 % ============================================================
 
@@ -470,6 +532,12 @@ state.
     with FlashAttention while preserving cross-GPU determinism is future work.
   \item \textbf{Dropout}: disabled in our tests. Deterministic dropout
     (via fixed PRNG state) is planned.
+  \item \textbf{WebGPU f32 precision}: the GPU matmul backend uses emulated
+    double precision (Dekker splitting), which provides $\sim$48 bits of
+    mantissa vs float64's 53 bits. For extreme value ranges, the Dekker
+    overflow guard falls back to standard f32 multiplication, losing the
+    error compensation term. Sum and reduce avoid this limitation by using
+    CPU float64.
 \end{itemize}
 
 % ============================================================
